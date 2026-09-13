@@ -16,7 +16,7 @@ class Converters {
         runCatching { MeasureStatus.valueOf(v) }.getOrDefault(MeasureStatus.STOPPED)
 }
 
-@Database(entities = [Article::class, Measure::class], version = 2, exportSchema = false)
+@Database(entities = [Article::class, Measure::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun articleDao(): ArticleDao
@@ -27,7 +27,6 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // articles: explicit lock end timestamp
                 db.execSQL(
                     "ALTER TABLE articles ADD COLUMN lockedUntil INTEGER NOT NULL DEFAULT 0"
                 )
@@ -35,15 +34,21 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "UPDATE articles SET lockedUntil = createdAt + $lockMs WHERE lockedUntil = 0"
                 )
-                // Remove example/seed laws; keep user-created
                 db.execSQL("DELETE FROM articles WHERE isSeed = 1")
-
-                // measures: bind to a law; type was already TEXT via converter
                 db.execSQL(
                     "ALTER TABLE measures ADD COLUMN articleId INTEGER NOT NULL DEFAULT 0"
                 )
-                // Normalize any legacy ordinal leftovers (unlikely — converter used names)
-                // Keep known names as-is; unknown stay as stored strings.
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // violationCount for «Нарушение» tracking
+                db.execSQL(
+                    "ALTER TABLE measures ADD COLUMN violationCount INTEGER NOT NULL DEFAULT 0"
+                )
+                // Existing ACTIVE rows keep running; no status rewrite needed.
+                // ARMED is new enum value stored as TEXT via converter — no schema change for status.
             }
         }
 
@@ -54,11 +59,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "kodeks_zhizni.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .addCallback(object : Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)
-                            // Safety net for installs that already had v2 schema without cleanup
                             db.execSQL("DELETE FROM articles WHERE isSeed = 1")
                         }
                     })

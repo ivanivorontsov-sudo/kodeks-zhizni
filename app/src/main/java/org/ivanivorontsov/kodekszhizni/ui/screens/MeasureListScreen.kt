@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,12 +27,16 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import org.ivanivorontsov.kodekszhizni.data.Article
@@ -57,17 +64,31 @@ fun MeasureListScreen(vm: MeasureViewModel) {
     val articles by vm.articles.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var showNeedLaw by remember { mutableStateOf(false) }
-    var filter by remember { mutableIntStateOf(0) } // 0 all, 1 active, 2 done
+    // 0 all, 1 armed/pending, 2 active, 3 done
+    var filter by remember { mutableIntStateOf(0) }
     val startError by vm.startError.collectAsState()
+    val toast by vm.toast.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(toast) {
+        toast?.let {
+            snackbar.showSnackbar(it)
+            vm.clearToast()
+        }
+    }
 
     val filtered = when (filter) {
-        1 -> all.filter { it.status == MeasureStatus.ACTIVE }
-        2 -> all.filter { it.status != MeasureStatus.ACTIVE }
+        1 -> all.filter { it.status == MeasureStatus.ARMED }
+        2 -> all.filter { it.status == MeasureStatus.ACTIVE }
+        3 -> all.filter {
+            it.status == MeasureStatus.COMPLETED || it.status == MeasureStatus.STOPPED
+        }
         else -> all
     }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Меры пресечения") }) },
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             FloatingActionButton(onClick = {
                 if (articles.isEmpty()) {
@@ -87,12 +108,15 @@ fun MeasureListScreen(vm: MeasureViewModel) {
                 .padding(horizontal = 16.dp)
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 12.dp)
+                Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(selected = filter == 0, onClick = { filter = 0 }, label = { Text("Все") })
-                FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("Активные") })
-                FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("Завершённые") })
+                FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("Ожидают") })
+                FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("Активные") })
+                FilterChip(selected = filter == 3, onClick = { filter = 3 }, label = { Text("Завершённые") })
             }
             LazyColumn(
                 contentPadding = PaddingValues(bottom = 88.dp),
@@ -102,6 +126,7 @@ fun MeasureListScreen(vm: MeasureViewModel) {
                     MeasureCard(
                         measure = m,
                         articleTitle = vm.articleTitle(m.articleId, articles),
+                        onViolation = { vm.recordViolation(m.id) },
                         onComplete = { vm.stop(m.id, completed = true) },
                         onStop = { vm.stop(m.id, completed = false) },
                         onDelete = { vm.delete(m.id) }
@@ -135,7 +160,7 @@ fun MeasureListScreen(vm: MeasureViewModel) {
                 val endAbs = daysUntil?.let {
                     System.currentTimeMillis() + TimeUnit.DAYS.toMillis(it)
                 }
-                vm.start(typeId, title, desc, hours, endAbs, articleId)
+                vm.arm(typeId, title, desc, hours, endAbs, articleId)
                 showCreate = false
             }
         )
@@ -157,6 +182,7 @@ fun MeasureListScreen(vm: MeasureViewModel) {
 private fun MeasureCard(
     measure: Measure,
     articleTitle: String,
+    onViolation: () -> Unit,
     onComplete: () -> Unit,
     onStop: () -> Unit,
     onDelete: () -> Unit
@@ -178,25 +204,82 @@ private fun MeasureCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+            Text(
+                "Нарушений: ${measure.violationCount}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
             if (measure.description.isNotBlank()) {
                 Text(measure.description, style = MaterialTheme.typography.bodyMedium)
             }
             Text(
                 buildString {
-                    append("Старт: ${fmt.format(Date(measure.startedAt))}")
-                    measure.endAt?.let { append(" · до ${fmt.format(Date(it))}") }
-                    if (measure.durationHours > 0) append(" · ${measure.durationHours} ч")
+                    when (measure.status) {
+                        MeasureStatus.ARMED -> {
+                            append("Ожидает нарушения")
+                            if (measure.durationHours > 0) {
+                                append(" · план ${measure.durationHours} ч")
+                            } else {
+                                append(" · без срока (до остановки)")
+                            }
+                        }
+                        MeasureStatus.ACTIVE -> {
+                            append("Старт: ${fmt.format(Date(measure.startedAt))}")
+                            measure.endAt?.let { append(" · до ${fmt.format(Date(it))}") }
+                                ?: append(" · без срока")
+                            if (measure.durationHours > 0) append(" · ${measure.durationHours} ч")
+                        }
+                        else -> {
+                            measure.completedAt?.let {
+                                append("Завершена: ${fmt.format(Date(it))}")
+                            }
+                            if (measure.durationHours > 0) append(" · план ${measure.durationHours} ч")
+                        }
+                    }
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
-            if (measure.status == MeasureStatus.ACTIVE) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onComplete) { Text("Выполнено") }
-                    TextButton(onClick = onStop) { Text("Остановить") }
+
+            when (measure.status) {
+                MeasureStatus.ARMED -> {
+                    Button(
+                        onClick = onViolation,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
+                    ) {
+                        Text("Нарушение", fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = onDelete) { Text("Удалить") }
                 }
-            } else {
-                TextButton(onClick = onDelete) { Text("Удалить") }
+                MeasureStatus.ACTIVE -> {
+                    OutlinedButton(
+                        onClick = onViolation,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Ещё нарушение")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = onComplete) { Text("Выполнено") }
+                        TextButton(onClick = onStop) { Text("Остановить") }
+                    }
+                }
+                MeasureStatus.COMPLETED, MeasureStatus.STOPPED -> {
+                    Button(
+                        onClick = onViolation,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
+                    ) {
+                        Text("Нарушение — запустить снова", fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = onDelete) { Text("Удалить") }
+                }
             }
         }
     }
@@ -226,6 +309,11 @@ private fun CreateMeasureDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text(
+                    "Мера сохранится в ожидании. Таймер запустится только после кнопки «Нарушение».",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
                 Text("Тип меры", style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
@@ -275,7 +363,7 @@ private fun CreateMeasureDialog(
                 OutlinedTextField(
                     value = hoursText,
                     onValueChange = { hoursText = it.filter { c -> c.isDigit() } },
-                    label = { Text("Длительность (часы)") },
+                    label = { Text("Плановая длительность (часы)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -283,7 +371,7 @@ private fun CreateMeasureDialog(
                 OutlinedTextField(
                     value = daysText,
                     onValueChange = { daysText = it.filter { c -> c.isDigit() } },
-                    label = { Text("Или до даты через N дней") },
+                    label = { Text("Или план: N дней (в часы)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -299,7 +387,7 @@ private fun CreateMeasureDialog(
                     onCreate(typeId, title, desc, hours, days, articleId)
                 },
                 enabled = articleId > 0L
-            ) { Text("Старт") }
+            ) { Text("В ожидание") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Отмена") }
@@ -308,6 +396,7 @@ private fun CreateMeasureDialog(
 }
 
 private fun statusLabel(s: MeasureStatus) = when (s) {
+    MeasureStatus.ARMED -> "Ожидает"
     MeasureStatus.ACTIVE -> "Активна"
     MeasureStatus.COMPLETED -> "Выполнена"
     MeasureStatus.STOPPED -> "Остановлена"

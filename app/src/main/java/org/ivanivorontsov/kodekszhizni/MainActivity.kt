@@ -45,6 +45,7 @@ import org.ivanivorontsov.kodekszhizni.ui.screens.ArticleViewModel
 import org.ivanivorontsov.kodekszhizni.ui.screens.MeasureListScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.MeasureViewModel
 import org.ivanivorontsov.kodekszhizni.ui.screens.NonComplianceWarningDialog
+import org.ivanivorontsov.kodekszhizni.ui.screens.ScaryCodexText
 import org.ivanivorontsov.kodekszhizni.ui.screens.SettingsScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.SettingsViewModel
 import org.ivanivorontsov.kodekszhizni.ui.theme.KodeksTheme
@@ -124,22 +125,32 @@ class MainActivity : ComponentActivity() {
                     ) {
                         // Prominent top banner on the main/home screen only
                         if (isHome) {
-                            Button(
-                                onClick = { showScaryCodex = true },
-                                modifier = Modifier
+                            Column(
+                                Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                )
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
-                                Icon(
-                                    Icons.Default.WarningAmber,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 8.dp)
+                                Button(
+                                    onClick = { showScaryCodex = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Default.WarningAmber,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    Text("Страшный кодекс — почему страшно не выполнять")
+                                }
+                                Text(
+                                    ScaryCodexText.BANNER_SUBTITLE,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                    modifier = Modifier.padding(top = 4.dp, start = 4.dp, end = 4.dp)
                                 )
-                                Text("Страшный кодекс — почему страшно не выполнять")
                             }
                         }
                         NavHost(

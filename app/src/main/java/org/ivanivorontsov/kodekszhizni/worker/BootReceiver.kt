@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.ivanivorontsov.kodekszhizni.KodeksApp
 import org.ivanivorontsov.kodekszhizni.data.SettingsStore
 
 class BootReceiver : BroadcastReceiver() {
@@ -17,6 +18,14 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val settings = SettingsStore(context).settings.first()
                 NotificationScheduler.reschedule(context, settings)
+                MeasureEndCompleter.sweepExpiredAndRing(context)
+                val app = context.applicationContext as? KodeksApp
+                if (app != null) {
+                    MeasureEndScheduler.rescheduleAll(
+                        context,
+                        app.repository.activeMeasuresWithEnd()
+                    )
+                }
             } finally {
                 pending.finish()
             }

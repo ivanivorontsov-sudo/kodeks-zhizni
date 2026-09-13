@@ -4,6 +4,8 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 enum class MeasureStatus {
+    /** Saved and bound to a law; waiting for «Нарушение» to start the timer. */
+    ARMED,
     ACTIVE,
     COMPLETED,
     STOPPED
@@ -18,11 +20,14 @@ data class Measure(
     val description: String = "",
     /** FK to articles.id — every measure must be bound to a law. */
     val articleId: Long,
-    /** Duration in hours; 0 means until endAt only */
+    /** Planned punishment length in hours; used when violation starts the timer. 0 = open-ended. */
     val durationHours: Long = 0,
+    /** When ACTIVE: timer start. When ARMED: creation time for sorting (not a running timer). */
     val startedAt: Long = System.currentTimeMillis(),
-    /** Absolute end timestamp; null if open-ended until stopped */
+    /** Absolute end timestamp while ACTIVE; null if open-ended or not yet started. */
     val endAt: Long? = null,
-    val status: MeasureStatus = MeasureStatus.ACTIVE,
-    val completedAt: Long? = null
+    val status: MeasureStatus = MeasureStatus.ARMED,
+    val completedAt: Long? = null,
+    /** How many times «Нарушение» was recorded for this measure row. */
+    val violationCount: Int = 0
 )

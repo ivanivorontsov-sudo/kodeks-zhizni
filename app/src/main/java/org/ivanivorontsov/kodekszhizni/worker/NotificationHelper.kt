@@ -30,6 +30,7 @@ object NotificationHelper {
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply { description = context.getString(R.string.channel_review_desc) }
         )
+        MeasureEndNotifier.ensureChannel(context)
     }
 
     fun showTip(context: Context, title: String, body: String, id: Int) {

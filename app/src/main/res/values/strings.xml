@@ -5,4 +5,7 @@
     <string name="channel_tips_desc">Ежедневные подсказки из кодекса</string>
     <string name="channel_review">Пересмотр норм</string>
     <string name="channel_review_desc">Ежемесячное напоминание пересмотреть нормы и меры</string>
+    <string name="channel_measure_end">Окончание меры</string>
+    <string name="channel_measure_end_desc">Громкое уведомление и звонок, когда срок меры пресечения истёк</string>
+    <string name="measure_ended_title">Мера окончена</string>
 </resources>

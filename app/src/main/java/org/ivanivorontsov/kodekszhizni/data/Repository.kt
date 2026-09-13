@@ -1,6 +1,7 @@
 package org.ivanivorontsov.kodekszhizni.data
 
 import kotlinx.coroutines.flow.Flow
+import java.util.concurrent.TimeUnit
 
 class Repository(
     private val articleDao: ArticleDao,
@@ -65,16 +66,61 @@ class Repository(
 
     suspend fun getMeasure(id: Long) = measureDao.getById(id)
 
-    suspend fun startMeasure(measure: Measure): Long {
+    suspend fun activeMeasuresWithEnd(): List<Measure> = measureDao.activeWithEnd()
+
+    /**
+     * Saves a measure as ARMED/pending — bound to a law, not yet running.
+     * [durationHours] is the planned length only; startedAt/endAt timer fields are not set as running.
+     */
+    suspend fun addArmedMeasure(measure: Measure): Long {
         require(measure.articleId > 0L) {
             "Мера должна быть привязана к закону. Сначала создайте закон."
         }
-        val article = articleDao.getById(measure.articleId)
+        articleDao.getById(measure.articleId)
             ?: error("Выбранный закон не найден. Создайте закон и попробуйте снова.")
-        // article used to validate existence
-        @Suppress("UNUSED_VARIABLE")
-        val _title = article.title
-        return measureDao.insert(measure)
+        val now = System.currentTimeMillis()
+        return measureDao.insert(
+            measure.copy(
+                status = MeasureStatus.ARMED,
+                startedAt = now, // creation/sort time only; not a running timer
+                endAt = null,
+                completedAt = null,
+                violationCount = measure.violationCount.coerceAtLeast(0)
+            )
+        )
+    }
+
+    /**
+     * Records a violation and starts (or restarts after COMPLETED/STOPPED) the measure timer.
+     * If already ACTIVE: only increments [Measure.violationCount], does not reset the timer.
+     * @return updated measure, or null if not found
+     */
+    suspend fun recordViolation(id: Long): Measure? {
+        val m = measureDao.getById(id) ?: return null
+        val now = System.currentTimeMillis()
+        val newCount = m.violationCount + 1
+        val updated = when (m.status) {
+            MeasureStatus.ACTIVE -> {
+                // Count only; do not restart timer
+                m.copy(violationCount = newCount)
+            }
+            MeasureStatus.ARMED, MeasureStatus.COMPLETED, MeasureStatus.STOPPED -> {
+                val end = if (m.durationHours > 0) {
+                    now + TimeUnit.HOURS.toMillis(m.durationHours)
+                } else {
+                    null // open-ended until manual stop
+                }
+                m.copy(
+                    violationCount = newCount,
+                    status = MeasureStatus.ACTIVE,
+                    startedAt = now,
+                    endAt = end,
+                    completedAt = null
+                )
+            }
+        }
+        measureDao.update(updated)
+        return updated
     }
 
     suspend fun stopMeasure(id: Long, completed: Boolean) {
@@ -89,12 +135,17 @@ class Repository(
 
     suspend fun deleteMeasure(id: Long) = measureDao.deleteById(id)
 
-    suspend fun completeExpiredMeasures() {
+    /**
+     * Marks expired ACTIVE measures as COMPLETED.
+     * @return list of measures that just completed (for ringtone / notification hooks)
+     */
+    suspend fun completeExpiredMeasures(): List<Measure> {
         val now = System.currentTimeMillis()
-        measureDao.expiredActive(now).forEach { m ->
-            measureDao.update(
-                m.copy(status = MeasureStatus.COMPLETED, completedAt = now)
-            )
+        val expired = measureDao.expiredActive(now)
+        return expired.map { m ->
+            val done = m.copy(status = MeasureStatus.COMPLETED, completedAt = now)
+            measureDao.update(done)
+            done
         }
     }
 }

@@ -21,6 +21,9 @@ interface MeasureDao {
     @Query("SELECT * FROM measures WHERE status = 'ACTIVE' AND endAt IS NOT NULL AND endAt <= :now")
     suspend fun expiredActive(now: Long): List<Measure>
 
+    @Query("SELECT * FROM measures WHERE status = 'ACTIVE' AND endAt IS NOT NULL")
+    suspend fun activeWithEnd(): List<Measure>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(measure: Measure): Long
 
