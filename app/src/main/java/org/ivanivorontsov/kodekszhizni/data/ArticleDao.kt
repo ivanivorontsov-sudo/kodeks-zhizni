@@ -48,4 +48,7 @@ interface ArticleDao {
 
     @Query("DELETE FROM articles WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM articles WHERE isSeed = 1")
+    suspend fun deleteSeeds()
 }

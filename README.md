@@ -1,8 +1,9 @@
 # Кодекс жизни / Kodeks Zhizni
 
-Личный кодекс жизненных норм: статьи-уроки, поиск, меры пресечения и ежедневные напоминания.
+Личный кодекс жизненных норм: законы-статьи, поиск, меры пресечения и ежедневные напоминания.
 
 **Package:** `org.ivanivorontsov.kodekszhizni`  
+**Version:** 1.1.0 (versionCode 2)  
 **Stack:** Kotlin · Jetpack Compose (Material 3) · Room · WorkManager · DataStore
 
 ---
@@ -38,18 +39,24 @@
 
 ---
 
-## Возможности / Features
+## Возможности / Features (1.1.0)
 
 | RU | EN |
 |----|----|
-| Редактор статей (создание, правка, удаление): заголовок, Markdown-текст, теги/категории, метки времени | Full article editor with markdown body, tags/categories, timestamps |
-| Поиск по названию, тексту и тегам | Search across title, body, tags |
-| Room / SQLite хранилище | Room / SQLite persistence |
-| Меры пресечения: цифровой детокс, ранний подъём, без соцсетей, своя мера + длительность; активные/завершённые | Restraint measures: detox, early wake, no social, custom + duration |
-| ~60 исходных русских статей-уроков при первом запуске | ~60 original Russian life-lesson articles on first launch |
-| Уведомления 3× в день + ежемесячный «пересмотри нормы» (WorkManager) | 3× daily rotating tips + monthly norms review |
-| Настройка времени и переключатели | Configurable times and toggles |
+| Законы кодекса с **блокировкой 30 дней** после создания (правка/удаление запрещены; дата разблокировки видна) | Laws lock for 30 days after create (edit/delete blocked) |
+| Предупреждение перед добавлением закона + кнопка **«Страшный кодекс»** на главном экране | Pre-create confirmation + scary non-compliance warning on home |
+| Меры **привязаны к закону** (обязательный выбор статьи) | Measures require a linked law |
+| Расширенные русские пресеты мер (детокс, без сладкого, холодный душ, спорт, бюджет и др.); тип хранится как String | Expanded Russian measure presets; type as String |
+| Без примеров-сидов: пустой старт; миграция удаляет `isSeed` | No seed examples; migration deletes seed rows |
+| Поиск, Room, уведомления 3×/день + ежемесячный обзор | Search, Room, daily tips + monthly review |
 | Material 3 Compose, minSdk 26, targetSdk 35 | Material 3 Compose UI |
+
+### Миграция Room 1 → 2
+
+- Добавляется `articles.lockedUntil` (= `createdAt` + 30 дней).
+- Удаляются строки `isSeed = 1`.
+- В `measures` добавляется `articleId` (у старых мер может быть `0` — закон «удалён» в UI).
+- Тип меры уже был TEXT; enum заменён на String-пресеты с сохранением старых id (`DIGITAL_DETOX` и т.д.).
 
 ---
 

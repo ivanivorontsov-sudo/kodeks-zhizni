@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.ivanivorontsov.kodekszhizni.data.Article
+import org.ivanivorontsov.kodekszhizni.data.daysLeft
+import org.ivanivorontsov.kodekszhizni.data.isLocked
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,7 +51,7 @@ fun ArticleListScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onCreate) {
-                Icon(Icons.Default.Add, contentDescription = "Новая статья")
+                Icon(Icons.Default.Add, contentDescription = "Новый закон")
             }
         }
     ) { padding ->
@@ -84,6 +86,8 @@ fun ArticleListScreen(
 @Composable
 private fun ArticleCard(article: Article, onClick: () -> Unit) {
     val fmt = SimpleDateFormat("d MMM yyyy, HH:mm", Locale("ru"))
+    val now = System.currentTimeMillis()
+    val locked = article.isLocked(now)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -116,9 +120,18 @@ private fun ArticleCard(article: Article, onClick: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp)
             )
             Text(
-                fmt.format(Date(article.updatedAt)),
+                buildString {
+                    append(fmt.format(Date(article.updatedAt)))
+                    if (locked) {
+                        append(" · 🔒 ещё ${article.daysLeft(now)} дн.")
+                    }
+                },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = if (locked) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                },
                 modifier = Modifier.padding(top = 8.dp)
             )
         }

@@ -1,15 +1,19 @@
 package org.ivanivorontsov.kodekszhizni.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
@@ -30,15 +34,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import org.ivanivorontsov.kodekszhizni.data.Article
 import org.ivanivorontsov.kodekszhizni.data.Measure
+import org.ivanivorontsov.kodekszhizni.data.MeasurePresets
 import org.ivanivorontsov.kodekszhizni.data.MeasureStatus
-import org.ivanivorontsov.kodekszhizni.data.MeasureType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -48,8 +54,11 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun MeasureListScreen(vm: MeasureViewModel) {
     val all by vm.measures.collectAsState()
+    val articles by vm.articles.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
+    var showNeedLaw by remember { mutableStateOf(false) }
     var filter by remember { mutableIntStateOf(0) } // 0 all, 1 active, 2 done
+    val startError by vm.startError.collectAsState()
 
     val filtered = when (filter) {
         1 -> all.filter { it.status == MeasureStatus.ACTIVE }
@@ -60,7 +69,13 @@ fun MeasureListScreen(vm: MeasureViewModel) {
     Scaffold(
         topBar = { TopAppBar(title = { Text("Меры пресечения") }) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) {
+            FloatingActionButton(onClick = {
+                if (articles.isEmpty()) {
+                    showNeedLaw = true
+                } else {
+                    showCreate = true
+                }
+            }) {
                 Icon(Icons.Default.Add, "Новая мера")
             }
         }
@@ -86,6 +101,7 @@ fun MeasureListScreen(vm: MeasureViewModel) {
                 items(filtered, key = { it.id }) { m ->
                     MeasureCard(
                         measure = m,
+                        articleTitle = vm.articleTitle(m.articleId, articles),
                         onComplete = { vm.stop(m.id, completed = true) },
                         onStop = { vm.stop(m.id, completed = false) },
                         onDelete = { vm.delete(m.id) }
@@ -95,15 +111,43 @@ fun MeasureListScreen(vm: MeasureViewModel) {
         }
     }
 
+    if (showNeedLaw) {
+        AlertDialog(
+            onDismissRequest = { showNeedLaw = false },
+            title = { Text("Сначала создайте закон") },
+            text = {
+                Text(
+                    "Мера пресечения должна быть привязана к закону кодекса. " +
+                        "Перейдите во вкладку «Кодекс», добавьте закон, затем вернитесь сюда."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showNeedLaw = false }) { Text("Понятно") }
+            }
+        )
+    }
+
     if (showCreate) {
         CreateMeasureDialog(
+            articles = articles,
             onDismiss = { showCreate = false },
-            onCreate = { type, title, desc, hours, daysUntil ->
+            onCreate = { typeId, title, desc, hours, daysUntil, articleId ->
                 val endAbs = daysUntil?.let {
                     System.currentTimeMillis() + TimeUnit.DAYS.toMillis(it)
                 }
-                vm.start(type, title, desc, hours, endAbs)
+                vm.start(typeId, title, desc, hours, endAbs, articleId)
                 showCreate = false
+            }
+        )
+    }
+
+    startError?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { vm.clearStartError() },
+            title = { Text("Нельзя создать меру") },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = { vm.clearStartError() }) { Text("Понятно") }
             }
         )
     }
@@ -112,6 +156,7 @@ fun MeasureListScreen(vm: MeasureViewModel) {
 @Composable
 private fun MeasureCard(
     measure: Measure,
+    articleTitle: String,
     onComplete: () -> Unit,
     onStop: () -> Unit,
     onDelete: () -> Unit
@@ -124,10 +169,15 @@ private fun MeasureCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = {}, label = { Text(typeLabel(measure.type)) })
+                AssistChip(onClick = {}, label = { Text(MeasurePresets.label(measure.type)) })
                 AssistChip(onClick = {}, label = { Text(statusLabel(measure.status)) })
             }
             Text(measure.title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Закон: $articleTitle",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
             if (measure.description.isNotBlank()) {
                 Text(measure.description, style = MaterialTheme.typography.bodyMedium)
             }
@@ -154,29 +204,58 @@ private fun MeasureCard(
 
 @Composable
 private fun CreateMeasureDialog(
+    articles: List<Article>,
     onDismiss: () -> Unit,
-    onCreate: (MeasureType, String, String, Long, Long?) -> Unit
+    onCreate: (typeId: String, title: String, desc: String, hours: Long, days: Long?, articleId: Long) -> Unit
 ) {
-    var type by remember { mutableStateOf(MeasureType.DIGITAL_DETOX) }
+    var typeId by remember { mutableStateOf(MeasurePresets.ALL.first().id) }
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
     var hoursText by remember { mutableStateOf("24") }
     var daysText by remember { mutableStateOf("") }
+    var articleId by remember { mutableLongStateOf(articles.firstOrNull()?.id ?: 0L) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Новая мера") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    MeasureType.entries.forEach { t ->
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Тип меры", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    MeasurePresets.ALL.forEach { preset ->
                         FilterChip(
-                            selected = type == t,
+                            selected = typeId == preset.id,
                             onClick = {
-                                type = t
-                                if (title.isBlank()) title = typeLabel(t)
+                                typeId = preset.id
+                                if (title.isBlank() || MeasurePresets.ALL.any { it.title == title }) {
+                                    title = preset.title
+                                }
+                                if (desc.isBlank() || MeasurePresets.ALL.any { it.description == desc }) {
+                                    desc = preset.description
+                                }
                             },
-                            label = { Text(typeLabel(t), style = MaterialTheme.typography.labelSmall) }
+                            label = {
+                                Text(preset.title, style = MaterialTheme.typography.labelSmall)
+                            }
+                        )
+                    }
+                }
+                Text("Закон кодекса", style = MaterialTheme.typography.labelLarge)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    articles.forEach { a ->
+                        FilterChip(
+                            selected = articleId == a.id,
+                            onClick = { articleId = a.id },
+                            label = { Text(a.title, maxLines = 1) }
                         )
                     }
                 }
@@ -212,23 +291,20 @@ private fun CreateMeasureDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val hours = hoursText.toLongOrNull() ?: 0L
-                val days = daysText.toLongOrNull()
-                onCreate(type, title, desc, hours, days)
-            }) { Text("Старт") }
+            TextButton(
+                onClick = {
+                    if (articleId <= 0L) return@TextButton
+                    val hours = hoursText.toLongOrNull() ?: 0L
+                    val days = daysText.toLongOrNull()
+                    onCreate(typeId, title, desc, hours, days, articleId)
+                },
+                enabled = articleId > 0L
+            ) { Text("Старт") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
-}
-
-private fun typeLabel(t: MeasureType) = when (t) {
-    MeasureType.DIGITAL_DETOX -> "Детокс"
-    MeasureType.EARLY_WAKE -> "Ранний подъём"
-    MeasureType.NO_SOCIAL -> "Без соцсетей"
-    MeasureType.CUSTOM -> "Своя"
 }
 
 private fun statusLabel(s: MeasureStatus) = when (s) {

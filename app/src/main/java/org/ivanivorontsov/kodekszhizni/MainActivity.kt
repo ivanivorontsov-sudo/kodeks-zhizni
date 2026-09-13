@@ -8,18 +8,29 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -33,6 +44,7 @@ import org.ivanivorontsov.kodekszhizni.ui.screens.ArticleListScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.ArticleViewModel
 import org.ivanivorontsov.kodekszhizni.ui.screens.MeasureListScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.MeasureViewModel
+import org.ivanivorontsov.kodekszhizni.ui.screens.NonComplianceWarningDialog
 import org.ivanivorontsov.kodekszhizni.ui.screens.SettingsScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.SettingsViewModel
 import org.ivanivorontsov.kodekszhizni.ui.theme.KodeksTheme
@@ -53,6 +65,8 @@ class MainActivity : ComponentActivity() {
                 val backStack by nav.currentBackStackEntryAsState()
                 val route = backStack?.destination?.route.orEmpty()
                 val showBar = route in listOf("codex", "measures", "settings")
+                val isHome = route == "codex"
+                var showScaryCodex by remember { mutableStateOf(false) }
                 val articleVm: ArticleViewModel = viewModel(
                     factory = ArticleViewModel.factory(app.repository)
                 )
@@ -103,36 +117,68 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { padding ->
-                    NavHost(
-                        navController = nav,
-                        startDestination = "codex",
-                        modifier = Modifier.padding(padding)
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding)
                     ) {
-                        composable("codex") {
-                            ArticleListScreen(
-                                vm = articleVm,
-                                onOpen = { id -> nav.navigate("article/$id") },
-                                onCreate = { nav.navigate("article/0") }
-                            )
+                        // Prominent top banner on the main/home screen only
+                        if (isHome) {
+                            Button(
+                                onClick = { showScaryCodex = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Default.WarningAmber,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text("Страшный кодекс — почему страшно не выполнять")
+                            }
                         }
-                        composable(
-                            "article/{id}",
-                            arguments = listOf(navArgument("id") { type = NavType.LongType })
-                        ) { entry ->
-                            val id = entry.arguments?.getLong("id") ?: 0L
-                            ArticleEditScreen(
-                                articleId = id,
-                                vm = articleVm,
-                                onBack = { nav.popBackStack() }
-                            )
-                        }
-                        composable("measures") {
-                            MeasureListScreen(vm = measureVm)
-                        }
-                        composable("settings") {
-                            SettingsScreen(vm = settingsVm)
+                        NavHost(
+                            navController = nav,
+                            startDestination = "codex",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                        ) {
+                            composable("codex") {
+                                ArticleListScreen(
+                                    vm = articleVm,
+                                    onOpen = { id -> nav.navigate("article/$id") },
+                                    onCreate = { nav.navigate("article/0") }
+                                )
+                            }
+                            composable(
+                                "article/{id}",
+                                arguments = listOf(navArgument("id") { type = NavType.LongType })
+                            ) { entry ->
+                                val id = entry.arguments?.getLong("id") ?: 0L
+                                ArticleEditScreen(
+                                    articleId = id,
+                                    vm = articleVm,
+                                    onBack = { nav.popBackStack() }
+                                )
+                            }
+                            composable("measures") {
+                                MeasureListScreen(vm = measureVm)
+                            }
+                            composable("settings") {
+                                SettingsScreen(vm = settingsVm)
+                            }
                         }
                     }
+                }
+
+                if (showScaryCodex) {
+                    NonComplianceWarningDialog(onDismiss = { showScaryCodex = false })
                 }
             }
         }

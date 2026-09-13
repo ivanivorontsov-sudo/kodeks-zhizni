@@ -18,6 +18,9 @@ class ArticleViewModel(private val repo: Repository) : ViewModel() {
     private val query = MutableStateFlow("")
     val searchQuery: StateFlow<String> = query
 
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError
+
     val articles = query
         .flatMapLatest { repo.articles(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -26,20 +29,34 @@ class ArticleViewModel(private val repo: Repository) : ViewModel() {
         query.value = q
     }
 
+    fun clearSaveError() {
+        _saveError.value = null
+    }
+
     suspend fun load(id: Long): Article? =
         if (id == 0L) null else repo.getArticle(id)
 
     fun save(article: Article, onDone: (Long) -> Unit) {
         viewModelScope.launch {
-            val id = repo.saveArticle(article)
-            onDone(id)
+            try {
+                val id = repo.saveArticle(article)
+                _saveError.value = null
+                onDone(id)
+            } catch (e: Exception) {
+                _saveError.value = e.message ?: "Не удалось сохранить"
+            }
         }
     }
 
     fun delete(id: Long, onDone: () -> Unit) {
         viewModelScope.launch {
-            repo.deleteArticle(id)
-            onDone()
+            try {
+                repo.deleteArticle(id)
+                _saveError.value = null
+                onDone()
+            } catch (e: Exception) {
+                _saveError.value = e.message ?: "Не удалось удалить"
+            }
         }
     }
 
