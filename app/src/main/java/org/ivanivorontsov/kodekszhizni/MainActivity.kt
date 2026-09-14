@@ -189,7 +189,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (showScaryCodex) {
-                    NonComplianceWarningDialog(onDismiss = { showScaryCodex = false })
+                    NonComplianceWarningDialog(
+                    settingsStore = app.settingsStore,
+                    onDismiss = { showScaryCodex = false }
+                )
                 }
             }
         }

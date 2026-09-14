@@ -2,19 +2,36 @@ package org.ivanivorontsov.kodekszhizni.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
+import org.ivanivorontsov.kodekszhizni.data.SettingsStore
+import org.ivanivorontsov.kodekszhizni.data.canEditScaryCodex
+import org.ivanivorontsov.kodekszhizni.data.daysUntilScaryEditUnlock
+import org.ivanivorontsov.kodekszhizni.data.scaryCodexUnlockAt
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Shared long-form scary consequences text (Russian, grounded, no gore/violence). */
 object ScaryCodexText {
@@ -97,7 +114,7 @@ object ScaryCodexText {
             "жить так, будто ваши собственные выводы можно выбросить без последствий."
     )
 
-    /** Flat body for optional article/description enrichment. */
+    /** Flat body for editable default / optional enrichment. */
     fun asPlainBody(): String = buildString {
         appendLine(INTRO_TITLE)
         appendLine()
@@ -110,9 +127,31 @@ object ScaryCodexText {
 }
 
 @Composable
-fun NonComplianceWarningDialog(onDismiss: () -> Unit) {
+fun NonComplianceWarningDialog(
+    settingsStore: SettingsStore,
+    onDismiss: () -> Unit
+) {
+    val state by settingsStore.scaryCodex.collectAsState(
+        initial = org.ivanivorontsov.kodekszhizni.data.ScaryCodexState()
+    )
+    val scope = rememberCoroutineScope()
+    val now = System.currentTimeMillis()
+    val canEdit = canEditScaryCodex(state.lastEditedAt, now)
+    val daysLeft = daysUntilScaryEditUnlock(state.lastEditedAt, now)
+    val unlockAt = scaryCodexUnlockAt(state.lastEditedAt)
+    val dateFmt = remember { SimpleDateFormat("d MMM yyyy", Locale("ru")) }
+
+    var editing by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+    var confirmSave by remember { mutableStateOf(false) }
+    var confirmReset by remember { mutableStateOf(false) }
+
+    val displayCustom = state.body.isNotBlank()
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!editing) onDismiss()
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
             .fillMaxWidth()
@@ -130,28 +169,154 @@ fun NonComplianceWarningDialog(onDismiss: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    ScaryCodexText.INTRO_TITLE,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    ScaryCodexText.BANNER_SUBTITLE,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-                ScaryCodexText.SECTIONS.forEach { (heading, body) ->
+                if (!canEdit && !editing) {
                     Text(
-                        heading,
-                        style = MaterialTheme.typography.titleSmall,
+                        "Редактирование заблокировано. Следующее через $daysLeft дн." +
+                            if (unlockAt > 0L) " (до ${dateFmt.format(Date(unlockAt))})" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (canEdit && !editing) {
+                    Text(
+                        "Можно отредактировать один раз в 30 дней.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+
+                if (editing) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 220.dp),
+                        label = { Text("Текст страшного кодекса") },
+                        minLines = 10
+                    )
+                } else if (displayCustom) {
+                    Text(
+                        state.body,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    Text(
+                        ScaryCodexText.INTRO_TITLE,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Text(body)
+                    Text(
+                        ScaryCodexText.BANNER_SUBTITLE,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    ScaryCodexText.SECTIONS.forEach { (heading, body) ->
+                        Text(
+                            heading,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(body)
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Я понял") }
+            if (editing) {
+                Row {
+                    TextButton(onClick = { confirmSave = true }) {
+                        Text("Сохранить")
+                    }
+                    TextButton(
+                        onClick = {
+                            editing = false
+                            draft = ""
+                        }
+                    ) {
+                        Text("Отмена")
+                    }
+                }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Я понял") }
+            }
+        },
+        dismissButton = {
+            if (!editing) {
+                Row {
+                    if (canEdit) {
+                        TextButton(
+                            onClick = {
+                                draft = if (state.body.isNotBlank()) {
+                                    state.body
+                                } else {
+                                    ScaryCodexText.asPlainBody()
+                                }
+                                editing = true
+                            }
+                        ) {
+                            Text("Редактировать")
+                        }
+                        if (state.body.isNotBlank()) {
+                            TextButton(onClick = { confirmReset = true }) {
+                                Text("Сбросить к стандартному")
+                            }
+                        }
+                    }
+                }
+            }
         }
     )
+
+    if (confirmSave) {
+        AlertDialog(
+            onDismissRequest = { confirmSave = false },
+            title = { Text("Сохранить изменения?") },
+            text = {
+                Text("После сохранения следующее редактирование через 30 дней.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmSave = false
+                        scope.launch {
+                            val ok = settingsStore.saveScaryCodexBody(draft.trim())
+                            if (ok) {
+                                editing = false
+                                draft = ""
+                            }
+                        }
+                    }
+                ) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSave = false }) { Text("Отмена") }
+            }
+        )
+    }
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Сбросить к стандартному?") },
+            text = {
+                Text(
+                    "Будет восстановлен встроенный текст. " +
+                        "Это тоже считается редактированием: следующее — через 30 дней."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmReset = false
+                        scope.launch {
+                            settingsStore.resetScaryCodexToDefault()
+                        }
+                    }
+                ) { Text("Сбросить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text("Отмена") }
+            }
+        )
+    }
 }
