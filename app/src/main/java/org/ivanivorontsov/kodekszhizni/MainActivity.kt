@@ -42,6 +42,7 @@ import androidx.navigation.navArgument
 import org.ivanivorontsov.kodekszhizni.ui.screens.ArticleEditScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.ArticleListScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.ArticleViewModel
+import org.ivanivorontsov.kodekszhizni.ui.screens.FirstRunDisclaimer
 import org.ivanivorontsov.kodekszhizni.ui.screens.MeasureListScreen
 import org.ivanivorontsov.kodekszhizni.ui.screens.MeasureViewModel
 import org.ivanivorontsov.kodekszhizni.ui.screens.NonComplianceWarningDialog
@@ -187,6 +188,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
+                FirstRunDisclaimer()
 
                 if (showScaryCodex) {
                     NonComplianceWarningDialog(

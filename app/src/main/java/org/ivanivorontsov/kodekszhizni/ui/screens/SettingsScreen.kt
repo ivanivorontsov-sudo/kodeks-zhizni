@@ -73,6 +73,8 @@ fun SettingsScreen(vm: SettingsViewModel) {
             Button(onClick = vm::sendTestTip, modifier = Modifier.fillMaxWidth()) {
                 Text("Тестовое уведомление")
             }
+            Text("О приложении", style = MaterialTheme.typography.titleMedium)
+            Text(Disclaimer.TEXT, style = MaterialTheme.typography.bodySmall)
             Text(
                 "Кодекс жизни · org.ivanivorontsov.kodekszhizni",
                 style = MaterialTheme.typography.labelSmall,
